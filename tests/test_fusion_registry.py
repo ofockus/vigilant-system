@@ -58,6 +58,8 @@ async def test_fusion_registry_allows_clean_setup():
     )
     assert env.decision["allow"] is True
     assert env.decision["final_score"] >= 68
+    assert env.skill_handoff["binance"]["exchange"] == "binance"
+    assert env.skill_handoff["openclaw"]["action"] in {"execute", "watch"}
 
 
 @pytest.mark.asyncio
@@ -99,3 +101,4 @@ async def test_fusion_registry_blocks_thin_suspicious_setup():
     )
     assert env.decision["allow"] is False
     assert env.decision["vetoes"]
+    assert env.skill_handoff["openclaw"]["action"] == "block"

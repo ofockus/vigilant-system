@@ -59,6 +59,11 @@ This repository is a consolidation skeleton built from multiple internal Apex li
 5. Boot optional services with `python -m services.<name>`.
 6. Boot the web app from `web/`.
 
+### One-command Pop!_OS bootstrap
+
+Run `infra/scripts/install_and_run_popos.sh` to install system deps, create `.venv`, generate `.env` template, start Redis, and launch `main.py` in background.
+
+
 ## What is deliberately *not* merged yet
 
 - Direct hard-coupling between the scanner and all v3 services.
@@ -66,3 +71,10 @@ This repository is a consolidation skeleton built from multiple internal Apex li
 - Any unsafe “god mode” branding in the runtime path.
 
 The current skeleton is meant to be a clean consolidation point, not a claim that every imported module already inter-operates perfectly.
+
+## Skills added
+
+- `skills/openclaw/SKILL.md`: translates fusion output into deterministic OpenClaw actions (`execute`, `watch`, `block`).
+- `skills/binance/SKILL.md`: normalizes Binance market context into a stable payload contract.
+- `skills/openclaw-binance/SKILL.md`: bridge contract that combines both skills into one handoff object.
+- Runtime integration lives in `core/skill_bridge.py` and is attached to `FusionRegistry` as `skill_handoff`.

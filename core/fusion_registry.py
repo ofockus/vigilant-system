@@ -19,6 +19,7 @@ from loguru import logger
 
 from config.config import cfg
 from core.service_clients import service_clients
+from core.skill_bridge import OpenClawBinanceBridge
 
 
 @dataclass
@@ -55,6 +56,7 @@ class FusionSignalEnvelope:
     narrative: Dict[str, Any] = field(default_factory=dict)
     macro: Dict[str, Any] = field(default_factory=dict)
     decision: Dict[str, Any] = field(default_factory=dict)
+    skill_handoff: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -66,10 +68,14 @@ class FusionSignalEnvelope:
             "narrative": self.narrative,
             "macro": self.macro,
             "decision": self.decision,
+            "skill_handoff": self.skill_handoff,
         }
 
 
 class FusionRegistry:
+    def __init__(self) -> None:
+        self._skill_bridge = OpenClawBinanceBridge(score_threshold=cfg.MIN_CONFLUENCE_SCORE)
+
     async def evaluate_opportunity(
         self,
         opportunity: Dict[str, Any],
@@ -92,6 +98,11 @@ class FusionRegistry:
                 trace=["fusion_disabled"],
             )
             envelope.decision = decision.to_dict()
+            envelope.skill_handoff = self._skill_bridge.build_handoff(
+                market_payload,
+                envelope.confluence,
+                envelope.decision,
+            )
             return envelope
 
         primary_asset = market_payload["primary_asset"]
@@ -120,6 +131,11 @@ class FusionRegistry:
 
         decision = self._make_decision(envelope)
         envelope.decision = decision.to_dict()
+        envelope.skill_handoff = self._skill_bridge.build_handoff(
+            market_payload,
+            envelope.confluence,
+            envelope.decision,
+        )
         return envelope
 
     def _build_market_payload(
