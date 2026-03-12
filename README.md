@@ -206,3 +206,104 @@ Also outputs:
 
 Integration:
 - `core/fusion_registry.py` computes `envelope.liquidity` and uses probabilities + acceptance for boost/penalty/veto in final decisioning.
+
+
+### Example Liquidity Worm JSON output
+
+```json
+{
+  "symbol": "ETHUSDT",
+  "liquidity_map": {
+    "liquidity_proximity_score": 78.4
+  },
+  "crowding_stress": {
+    "wvi": 5.12,
+    "crowding_score": 73.8,
+    "squeeze_risk_score": 69.2
+  },
+  "sweep_detector": {
+    "sweep_detected": true,
+    "sweep_direction": "up_sweep",
+    "reclaim_strength": 0.62
+  },
+  "break_validation": {
+    "acceptance_score": 0.41,
+    "true_break_prob": 0.44,
+    "failure_break_prob": 0.68
+  },
+  "book_integrity": {
+    "spoof_risk": 58.7,
+    "wall_quality_score": 47.5
+  },
+  "probabilities": {
+    "p_sweep": 0.74,
+    "p_trend": 0.29,
+    "p_neutral": 0.26
+  },
+  "regime": "sweep_reversal",
+  "trigger": "sweep_and_reclaim"
+}
+```
+
+### Scan loop integration (Apex)
+
+In `scanners/dynamic_tri_scanner.py`, the scan cycle now consumes `fusion.liquidity.crowding_stress.wvi` and triggers Robin Hood pause when WVI is above `WVI_PAUSE_THRESHOLD`.
+
+For custom runners like `apex_predator_neo.py`, use the same pattern:
+
+```python
+wvi = float((((fusion_payload.get("liquidity") or {}).get("crowding_stress") or {}).get("wvi", 0.0) or 0.0)
+if wvi >= cfg.WVI_PAUSE_THRESHOLD:
+    await robin_hood.trigger_pause(f"WVI {wvi:.2f} acima do limite")
+```
+
+
+### Conflict resolution check
+
+Use `infra/scripts/resolve_conflicts.sh` before commits/PRs to fail fast if any merge conflict marker (`<<<<<<<`, `=======`, `>>>>>>>`) remains in tracked source paths.
+
+
+### Unified runtime orchestration (Fusion + Worm + Shield)
+
+Use `core/unified_signal_hub.py::UnifiedSignalHub` to run a full cycle and get one normalized payload containing:
+- `envelope` (fusion + liquidity + skill handoff)
+- `decision` (boost/penalty/veto aware action)
+- `mitigation` (worm-based anti-adversarial flags)
+- `actions` (pause recommendation, subaccount rotation hint, ghost mode)
+
+```python
+from core.fusion_registry import FusionRegistry
+from core.adversarial_shield import AdversarialShieldWorm
+from core.unified_signal_hub import UnifiedSignalHub
+
+hub = UnifiedSignalHub(FusionRegistry(), AdversarialShieldWorm(exchange))
+result = (await hub.run_cycle(
+    opportunity=opportunity,
+    confluence_result=confluence_result,
+    orderbooks=orderbooks,
+    tickers=tickers,
+    markets=markets,
+)).to_dict()
+```
+
+### AdversarialShieldWorm integration
+
+New class: `core/adversarial_shield.py::AdversarialShieldWorm`
+
+Capabilities (defensive):
+- spoof risk detection (`wall_persistence` + low `acceptance_score`)
+- fake sweep detection (`p_sweep` + reclaim strength)
+- adaptive jitter from `wvi_instability`
+- IOC defensive execution when sweep risk is high
+- subaccount alias rotation simulation when `wvi_crowding` is extreme
+- circuit-breaker recommendation from regime + WVI
+
+Usage:
+```python
+from core.adversarial_shield import AdversarialShieldWorm
+
+shield = AdversarialShieldWorm(exchange)
+worm = shield.evaluate_market_state(market, spoof, macro, regime)
+if shield.maybe_trip_circuit_breaker(worm):
+    ...
+```

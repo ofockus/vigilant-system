@@ -317,6 +317,13 @@ class DynamicTriScanner:
 
             opp.fusion = fusion.to_dict()
             opp.confluence_score = float(decision.get("final_score", conf_result.score) or conf_result.score)
+
+            wvi = float((((opp.fusion.get("liquidity") or {}).get("crowding_stress") or {}).get("wvi", 0.0) or 0.0))
+            if wvi >= cfg.WVI_PAUSE_THRESHOLD:
+                await robin_hood.trigger_pause(f"WVI {wvi:.2f} acima do limite {cfg.WVI_PAUSE_THRESHOLD:.2f}")
+                logger.warning(f"wvi_pause_triggered id={opp.id} wvi={wvi:.2f}")
+                continue
+
             snipe_boost = self._narrative_snipe_boost(opp, self._tickers)
             combined = opp.net_pct * ((opp.confluence_score + snipe_boost) / 100.0)
             if combined > best_combined_score:

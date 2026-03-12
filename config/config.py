@@ -54,6 +54,7 @@ class ApexConfig(BaseSettings):
     REQUEST_JITTER_MIN: float = 0.6
     REQUEST_JITTER_MAX: float = 1.2
     RETRY_ATTEMPTS: int = 3
+    WVI_PAUSE_THRESHOLD: float = 5.2
 
     # ── Logging ──────────────────────────────────────────
     LOG_LEVEL: str = "INFO"
