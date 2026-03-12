@@ -261,3 +261,26 @@ if wvi >= cfg.WVI_PAUSE_THRESHOLD:
 ### Conflict resolution check
 
 Use `infra/scripts/resolve_conflicts.sh` before commits/PRs to fail fast if any merge conflict marker (`<<<<<<<`, `=======`, `>>>>>>>`) remains in tracked source paths.
+
+
+### AdversarialShieldWorm integration
+
+New class: `core/adversarial_shield.py::AdversarialShieldWorm`
+
+Capabilities (defensive):
+- spoof risk detection (`wall_persistence` + low `acceptance_score`)
+- fake sweep detection (`p_sweep` + reclaim strength)
+- adaptive jitter from `wvi_instability`
+- IOC defensive execution when sweep risk is high
+- subaccount alias rotation simulation when `wvi_crowding` is extreme
+- circuit-breaker recommendation from regime + WVI
+
+Usage:
+```python
+from core.adversarial_shield import AdversarialShieldWorm
+
+shield = AdversarialShieldWorm(exchange)
+worm = shield.evaluate_market_state(market, spoof, macro, regime)
+if shield.maybe_trip_circuit_breaker(worm):
+    ...
+```

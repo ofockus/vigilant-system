@@ -17,6 +17,8 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Seq
 from dotenv import load_dotenv
 from loguru import logger
 
+from services.liquidity_worm import LiquidityWormService
+
 try:
     # Preferred path requested by user.
     import ccxt.pro as ccxt_pro
@@ -186,4 +188,131 @@ class AdversarialShield:
         self._detection_events.append(time.time())
 
 
-__all__ = ["AdversarialShield", "ShieldConfig", "ccxt_pro"]
+__all__ = ["AdversarialShield", "ShieldConfig", "AdversarialShieldWorm", "WormShieldConfig", "ccxt_pro"]
+
+
+@dataclass
+class WormShieldConfig:
+    spoof_acceptance_threshold: float = 0.45
+    sweep_reclaim_threshold: float = 0.55
+    psweep_high_threshold: float = 0.68
+    wvi_crowding_rotate_threshold: float = 3.0
+    wvi_regime_pause_threshold: float = 5.4
+
+
+class AdversarialShieldWorm(AdversarialShield):
+    """Defensive anti-whale adapter powered by LiquidityWormService.
+
+    This class detects hostile microstructure patterns and applies risk mitigation:
+    - spoof-risk alarms (wall vanish + weak acceptance)
+    - fake sweep alarms (high p_sweep + fast reclaim)
+    - adaptive jitter from WVI instability
+    - IOC-only defensive execution when sweep-risk is elevated
+    - subaccount alias rotation when crowding is extreme (simulation)
+    - auto circuit-breaker on hostile regime
+    """
+
+    def __init__(
+        self,
+        exchange: Any,
+        config: Optional[ShieldConfig] = None,
+        proxy_pool: Optional[Sequence[str]] = None,
+        worm_config: Optional[WormShieldConfig] = None,
+        worm_service: Optional[LiquidityWormService] = None,
+    ) -> None:
+        super().__init__(exchange=exchange, config=config, proxy_pool=proxy_pool)
+        self.worm_config = worm_config or WormShieldConfig()
+        self.worm_service = worm_service or LiquidityWormService()
+
+    def evaluate_market_state(
+        self,
+        market: Dict[str, Any],
+        spoof: Dict[str, Any],
+        macro: Dict[str, Any],
+        regime: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        analysis = self.worm_service.analyze(market=market, spoof=spoof, macro=macro, regime=regime)
+
+        brk = analysis.get("break_validation", {})
+        swp = analysis.get("sweep_detector", {})
+        probs = analysis.get("probabilities", {})
+        crowd = analysis.get("crowding_stress", {})
+        book = analysis.get("book_integrity", {})
+
+        acceptance = float(brk.get("acceptance_score", 0.0) or 0.0)
+        p_sweep = float(probs.get("p_sweep", 0.0) or 0.0)
+        reclaim = float(swp.get("reclaim_strength", 0.0) or 0.0)
+        wvi_instability = float(crowd.get("wvi_instability", 0.0) or 0.0)
+        wvi_crowding = float(crowd.get("wvi_crowding", 0.0) or 0.0)
+        wvi = float(crowd.get("wvi", 0.0) or 0.0)
+
+        spoof_detected = bool(book.get("wall_persistence", 0.0) < 0.45 and acceptance <= self.worm_config.spoof_acceptance_threshold)
+        fake_sweep_detected = bool(
+            p_sweep >= self.worm_config.psweep_high_threshold
+            and reclaim >= self.worm_config.sweep_reclaim_threshold
+        )
+        should_rotate_subaccount = bool(wvi_crowding >= self.worm_config.wvi_crowding_rotate_threshold)
+        should_pause = bool(
+            analysis.get("regime") == "sweep_reversal"
+            and wvi >= self.worm_config.wvi_regime_pause_threshold
+        )
+
+        adaptive_jitter = max(0.6, min(1.4, 1.0 + (wvi_instability * 0.1)))
+
+        mitigation = {
+            "spoof_detected": spoof_detected,
+            "fake_sweep_detected": fake_sweep_detected,
+            "ghost_execution_mode": p_sweep >= self.worm_config.psweep_high_threshold,
+            "rotate_subaccount": should_rotate_subaccount,
+            "pause_recommended": should_pause,
+            "adaptive_jitter_factor": round(adaptive_jitter, 4),
+        }
+
+        return {
+            "analysis": analysis,
+            "mitigation": mitigation,
+        }
+
+    async def jitter_sleep_from_worm(self, base_delay_s: float, worm_output: Dict[str, Any]) -> float:
+        crowd = ((worm_output.get("analysis") or {}).get("crowding_stress") or {})
+        instability = float(crowd.get("wvi_instability", 0.0) or 0.0)
+        factor = max(0.6, min(1.4, 1.0 + instability * 0.1))
+        delay = max(0.0, factor * base_delay_s)
+        logger.debug("worm_jitter base={} instability={} factor={} delay={}", base_delay_s, instability, round(factor, 4), round(delay, 4))
+        await asyncio.sleep(delay)
+        return delay
+
+    async def execute_defensive_order(
+        self,
+        symbol: str,
+        side: str,
+        amount: float,
+        price: float,
+        worm_output: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        mitigation = worm_output.get("mitigation", {})
+        if mitigation.get("ghost_execution_mode"):
+            return await self.ghost_execute_ioc(symbol=symbol, side=side, amount=amount, price=price)
+
+        order = await self.exchange.create_order(
+            symbol=symbol,
+            type="limit",
+            side=side,
+            amount=amount,
+            price=price,
+            params={"timeInForce": "GTC"},
+        )
+        return order
+
+    def maybe_rotate_subaccount(self, worm_output: Dict[str, Any]) -> str | None:
+        mitigation = worm_output.get("mitigation", {})
+        if mitigation.get("rotate_subaccount"):
+            return self.next_subaccount_alias()
+        return None
+
+    def maybe_trip_circuit_breaker(self, worm_output: Dict[str, Any]) -> bool:
+        mitigation = worm_output.get("mitigation", {})
+        if mitigation.get("pause_recommended"):
+            self._register_detection_event()
+            return True
+        return False
