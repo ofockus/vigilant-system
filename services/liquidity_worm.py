@@ -41,8 +41,6 @@ class LiquidityWormService:
     c3: float = 0.25
     c4: float = 0.20
     c5: float = 0.18
-class LiquidityWormEngine:
-    round_step_bps: float = 25.0
 
     def analyze(
         self,
@@ -67,7 +65,6 @@ class LiquidityWormEngine:
         ghost_count = int(spoof.get("ghost_walls_detected", 0) or 0)
         iceberg = bool(spoof.get("iceberg_detected", False))
 
-        # A) Liquidity map pieces
         # A) Liquidity map
         d_pdh_pdl = abs(net_pct)
         d_pwh_pwl = abs(mean_spread_bps / 100.0)
@@ -93,12 +90,6 @@ class LiquidityWormEngine:
                 + self.w6 * liq_cluster,
             ),
         )
-        liquidity_proximity_score = self._clip100(liquidity_score_norm * 100.0)
-
-        # B) WVI split + crowding stress
-        funding_z = min(4.0, abs(funding_rate) / 0.0004)
-        volume_impulse = min(4.0, quote_volume / 1_500_000)
-        spot_followthrough = max(0.0, min(4.0, (abs(net_pct) / max(0.15, atr_pct * 0.25))))
         liquidity_proximity_score = self._clip100(100.0 - (d_pdh_pdl * 20 + d_pwh_pwl * 20 + d_round * 20 + d_swing * 40))
 
         # B) WVI split + crowding stress
@@ -147,11 +138,6 @@ class LiquidityWormEngine:
             0.0,
             min(
                 1.0,
-                self.c1 * time_to_reclaim
-                + self.c2 * float(close_beyond_level)
-                + self.c3 * float(retest_hold)
-                + self.c4 * float(spot_perp_alignment)
-                - self.c5 * min(1.0, wvi / 8.0),
                 0.22 * close_beyond_level
                 + 0.26 * retest_hold
                 + 0.22 * volume_confirmation
@@ -164,22 +150,6 @@ class LiquidityWormEngine:
         true_break_prob = max(0.0, min(1.0, acceptance_score + (0.08 if oi_behavior_ok else -0.05)))
         failure_break_prob = max(0.0, min(1.0, 1.0 - true_break_prob + (0.12 if crowding_score > 75 else 0.0)))
 
-        # Probabilistic heads
-        p_sweep = self._sigmoid(
-            self.a1 * liquidity_proximity_score
-            + self.a2 * wvi
-            + self.a3 * failed_break_count
-            + self.a4 * extreme_funding
-            + self.a5 * oi_acceleration
-            - 2.4
-        )
-
-        p_trend = self._sigmoid(
-            self.b1 * break_hold_retest_score
-            + self.b2 * float(spot_perp_alignment)
-            + self.b3 * float(volume_confirmation)
-            - self.b4 * max(0.0, wvi)
-            - 0.3
         # Probabilistic regime heads
         p_sweep = self._sigmoid(
             0.02 * liquidity_proximity_score
@@ -229,8 +199,6 @@ class LiquidityWormEngine:
             "crowding_stress": {
                 "oi_delta": round(oi_delta, 4),
                 "funding_zscore": round(funding_z, 4),
-                "price_delta": round(abs(net_pct), 4),
-                "realized_vol": round(atr_pct, 4),
                 "price_delta": round(price_delta, 4),
                 "realized_vol": round(realized_vol, 4),
                 "basis_perp_premium": round(basis, 6),
@@ -344,13 +312,3 @@ class LiquidityWormEngine:
 # Backward compatibility alias
 LiquidityWormEngine = LiquidityWormService
 liquidity_worm = LiquidityWormService()
-        # stable enough range for this module
-        if x >= 0:
-            z = 1.0 / (1.0 + (2.718281828 ** (-x)))
-        else:
-            ex = 2.718281828 ** x
-            z = ex / (1.0 + ex)
-        return max(0.0, min(1.0, z))
-
-
-liquidity_worm = LiquidityWormEngine()

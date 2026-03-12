@@ -196,8 +196,6 @@ class FusionRegistry:
                 spread_bps[sym] = 0.0
 
         clean_primary_symbol = primary_symbol.replace("/", "").replace(":", "")
-        if clean_primary_symbol and clean_primary_symbol not in clean_primary_symbol[-4:]:
-            pass
 
         market = markets.get(primary_symbol) or {}
         return {
