@@ -263,6 +263,29 @@ if wvi >= cfg.WVI_PAUSE_THRESHOLD:
 Use `infra/scripts/resolve_conflicts.sh` before commits/PRs to fail fast if any merge conflict marker (`<<<<<<<`, `=======`, `>>>>>>>`) remains in tracked source paths.
 
 
+### Unified runtime orchestration (Fusion + Worm + Shield)
+
+Use `core/unified_signal_hub.py::UnifiedSignalHub` to run a full cycle and get one normalized payload containing:
+- `envelope` (fusion + liquidity + skill handoff)
+- `decision` (boost/penalty/veto aware action)
+- `mitigation` (worm-based anti-adversarial flags)
+- `actions` (pause recommendation, subaccount rotation hint, ghost mode)
+
+```python
+from core.fusion_registry import FusionRegistry
+from core.adversarial_shield import AdversarialShieldWorm
+from core.unified_signal_hub import UnifiedSignalHub
+
+hub = UnifiedSignalHub(FusionRegistry(), AdversarialShieldWorm(exchange))
+result = (await hub.run_cycle(
+    opportunity=opportunity,
+    confluence_result=confluence_result,
+    orderbooks=orderbooks,
+    tickers=tickers,
+    markets=markets,
+)).to_dict()
+```
+
 ### AdversarialShieldWorm integration
 
 New class: `core/adversarial_shield.py::AdversarialShieldWorm`
