@@ -36,7 +36,13 @@ def setup_logging() -> None:
         "<cyan>{name}</cyan>:<cyan>{line}</cyan> | "
         "<level>{message}</level>"
     )
-    logger.add(sys.stderr, level=cfg.LOG_LEVEL, format=fmt_console, colorize=True)
+    logger.add(
+        sys.stderr,
+        level=cfg.LOG_LEVEL,
+        format=fmt_console,
+        colorize=not cfg.LOG_JSON,
+        serialize=cfg.LOG_JSON,
+    )
     logger.add(
         f"/app/logs/apex_predator_{cfg.APEX_ROLE}_{cfg.APEX_REGION}.log",
         level="DEBUG",

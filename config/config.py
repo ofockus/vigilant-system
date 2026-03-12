@@ -47,10 +47,18 @@ class ApexConfig(BaseSettings):
     TAKER_FEE: float = 0.00075
 
     # ── Auto-Earn ────────────────────────────────────────
-    AUTO_EARN_MIN_PROFIT: float = 0.10
+    AUTO_EARN_MIN_PROFIT: float = 0.05
+
+
+    # ── Resiliência adversária defensiva ───────────────
+    REQUEST_JITTER_MIN: float = 0.6
+    REQUEST_JITTER_MAX: float = 1.2
+    RETRY_ATTEMPTS: int = 3
+    WVI_PAUSE_THRESHOLD: float = 5.2
 
     # ── Logging ──────────────────────────────────────────
     LOG_LEVEL: str = "INFO"
+    LOG_JSON: bool = True
     LOG_ROTATION: str = "50 MB"
     LOG_RETENTION: str = "7 days"
 

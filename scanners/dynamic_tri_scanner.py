@@ -18,6 +18,7 @@ Fluxo por ciclo:
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -221,7 +222,8 @@ class DynamicTriScanner:
 
             elapsed = time.time() - cycle_start
             sleep_time = max(0, interval_s - elapsed)
-            await asyncio.sleep(sleep_time)
+            jitter = random.uniform(cfg.REQUEST_JITTER_MIN, cfg.REQUEST_JITTER_MAX)
+            await asyncio.sleep(sleep_time * jitter)
 
     def stop(self) -> None:
         self._running = False
@@ -249,8 +251,12 @@ class DynamicTriScanner:
                 continue
 
             orderbooks: Dict[str, Dict] = {}
-            for leg in tri:
-                ob = await connector.fetch_orderbook(leg.symbol, 10)
+            ob_tasks = [connector.fetch_orderbook(leg.symbol, 10) for leg in tri]
+            ob_results = await asyncio.gather(*ob_tasks, return_exceptions=True)
+            for leg, ob in zip(tri, ob_results):
+                if isinstance(ob, Exception):
+                    logger.debug(f"orderbook_error symbol={leg.symbol} err={type(ob).__name__}")
+                    continue
                 if ob:
                     orderbooks[leg.symbol] = ob
 
@@ -312,7 +318,14 @@ class DynamicTriScanner:
             opp.fusion = fusion.to_dict()
             opp.confluence_score = float(decision.get("final_score", conf_result.score) or conf_result.score)
 
-            combined = opp.net_pct * (opp.confluence_score / 100.0)
+            wvi = float((((opp.fusion.get("liquidity") or {}).get("crowding_stress") or {}).get("wvi", 0.0) or 0.0))
+            if wvi >= cfg.WVI_PAUSE_THRESHOLD:
+                await robin_hood.trigger_pause(f"WVI {wvi:.2f} acima do limite {cfg.WVI_PAUSE_THRESHOLD:.2f}")
+                logger.warning(f"wvi_pause_triggered id={opp.id} wvi={wvi:.2f}")
+                continue
+
+            snipe_boost = self._narrative_snipe_boost(opp, self._tickers)
+            combined = opp.net_pct * ((opp.confluence_score + snipe_boost) / 100.0)
             if combined > best_combined_score:
                 best_combined_score = combined
                 best = opp
@@ -376,6 +389,22 @@ class DynamicTriScanner:
             if connector.symbol_exists(leg.symbol):
                 return leg.symbol
         return tri[0].symbol if tri else None
+
+
+    def _narrative_snipe_boost(self, opp: TriangleOpportunity, tickers: Dict[str, Dict]) -> float:
+        """Simple narrative sniping: volume surge + momentum anomaly."""
+        total_qv = 0.0
+        max_pct = 0.0
+        for leg in opp.legs:
+            tk = tickers.get(leg.symbol, {})
+            total_qv += float(tk.get("quoteVolume", 0) or 0)
+            max_pct = max(max_pct, abs(float(tk.get("percentage", 0) or 0)))
+
+        if total_qv >= 8_000_000 and max_pct >= 3.5:
+            return 4.0
+        if total_qv >= 3_000_000 and max_pct >= 2.0:
+            return 2.0
+        return 0.0
 
 
 scanner = DynamicTriScanner()

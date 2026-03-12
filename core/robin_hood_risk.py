@@ -226,6 +226,12 @@ class RobinHoodRisk:
             "drawdown_pct": self.drawdown_pct,
         }, ttl=cfg.ROBIN_HOOD_COOLDOWN_S + 120)
 
+    async def trigger_pause(self, reason: str) -> None:
+        """Public helper to trigger protective pause from external modules."""
+        async with self._lock:
+            await self._activate_pause(reason)
+
+
     # ───────────────────────────────────────────────────────
     # RESUMO
     # ───────────────────────────────────────────────────────

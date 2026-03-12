@@ -39,6 +39,11 @@ services:
     environment:
       - APEX_ROLE=scanner
       - APEX_REGION=curitiba
+      - SPOOFHUNTER_URL=http://spoofhunter:8011
+      - ANTIRUG_URL=http://antirug:8012
+      - NEWTONIAN_URL=http://newtonian:8013
+      - NARRATIVE_URL=http://narrative:8014
+      - ECONOPREDATOR_URL=http://econopredator:8015
     depends_on:
       redis:
         condition: service_healthy
@@ -102,6 +107,107 @@ services:
         limits:
           cpus: "1.5"
           memory: 512M
+
+
+  spoofhunter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apex666_spoofhunter
+    env_file: .env
+    command: ["uvicorn", "services.spoofhunter:app", "--host", "0.0.0.0", "--port", "8011"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - apex_net
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+  antirug:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apex666_antirug
+    env_file: .env
+    command: ["uvicorn", "services.antirug_v3:app", "--host", "0.0.0.0", "--port", "8012"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - apex_net
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+  newtonian:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apex666_newtonian
+    env_file: .env
+    command: ["uvicorn", "services.newtonian:app", "--host", "0.0.0.0", "--port", "8013"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - apex_net
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+  narrative:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apex666_narrative
+    env_file: .env
+    command: ["uvicorn", "services.narrative:app", "--host", "0.0.0.0", "--port", "8014"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - apex_net
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+  econopredator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apex666_econopredator
+    env_file: .env
+    command: ["uvicorn", "services.econopredator:app", "--host", "0.0.0.0", "--port", "8015"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - apex_net
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+
+  openclaw_gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apex666_openclaw_gateway
+    env_file: .env
+    command: ["uvicorn", "services.openclaw_gateway:app", "--host", "0.0.0.0", "--port", "8090"]
+    ports:
+      - "8090:8090"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - apex_net
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+      - ./third_party:/app/third_party
 
 networks:
   apex_net:

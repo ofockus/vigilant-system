@@ -19,6 +19,8 @@ from loguru import logger
 
 from config.config import cfg
 from core.service_clients import service_clients
+from core.skill_bridge import OpenClawBinanceBridge
+from services.liquidity_worm import liquidity_worm
 
 
 @dataclass
@@ -54,7 +56,9 @@ class FusionSignalEnvelope:
     regime: Dict[str, Any] = field(default_factory=dict)
     narrative: Dict[str, Any] = field(default_factory=dict)
     macro: Dict[str, Any] = field(default_factory=dict)
+    liquidity: Dict[str, Any] = field(default_factory=dict)
     decision: Dict[str, Any] = field(default_factory=dict)
+    skill_handoff: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -65,11 +69,16 @@ class FusionSignalEnvelope:
             "regime": self.regime,
             "narrative": self.narrative,
             "macro": self.macro,
+            "liquidity": self.liquidity,
             "decision": self.decision,
+            "skill_handoff": self.skill_handoff,
         }
 
 
 class FusionRegistry:
+    def __init__(self) -> None:
+        self._skill_bridge = OpenClawBinanceBridge(score_threshold=cfg.MIN_CONFLUENCE_SCORE)
+
     async def evaluate_opportunity(
         self,
         opportunity: Dict[str, Any],
@@ -92,6 +101,11 @@ class FusionRegistry:
                 trace=["fusion_disabled"],
             )
             envelope.decision = decision.to_dict()
+            envelope.skill_handoff = self._skill_bridge.build_handoff(
+                market_payload,
+                envelope.confluence,
+                envelope.decision,
+            )
             return envelope
 
         primary_asset = market_payload["primary_asset"]
@@ -117,9 +131,20 @@ class FusionRegistry:
         envelope.regime = regime
         envelope.narrative = narrative
         envelope.macro = macro
+        envelope.liquidity = liquidity_worm.analyze(
+            market=envelope.market,
+            spoof=envelope.spoof,
+            macro=envelope.macro,
+            regime=envelope.regime,
+        )
 
         decision = self._make_decision(envelope)
         envelope.decision = decision.to_dict()
+        envelope.skill_handoff = self._skill_bridge.build_handoff(
+            market_payload,
+            envelope.confluence,
+            envelope.decision,
+        )
         return envelope
 
     def _build_market_payload(
@@ -554,6 +579,64 @@ class FusionRegistry:
             decision.score_delta += 1.5
             decision.boosts.append("strong_liquidity")
             decision.trace.append("boost:liquidity")
+
+
+        liquidity = envelope.liquidity or {}
+        crowding = liquidity.get("crowding_stress") or {}
+        book = liquidity.get("book_integrity") or {}
+        brk = liquidity.get("break_validation") or {}
+        sweep = liquidity.get("sweep_detector") or {}
+        probs = liquidity.get("probabilities") or {}
+
+        crowding_score = float(crowding.get("crowding_score", 0.0) or 0.0)
+        squeeze_score = float(crowding.get("squeeze_risk_score", 0.0) or 0.0)
+        spoof_risk = float(book.get("spoof_risk", 0.0) or 0.0)
+        wall_quality = float(book.get("wall_quality_score", 0.0) or 0.0)
+        true_break_prob = float(brk.get("true_break_prob", 0.0) or 0.0)
+        fail_break_prob = float(brk.get("failure_break_prob", 0.0) or 0.0)
+        sweep_detected = bool(sweep.get("sweep_detected", False))
+        reclaim_strength = float(sweep.get("reclaim_strength", 0.0) or 0.0)
+
+        if spoof_risk >= 75:
+            decision.vetoes.append("liquidity_spoof_risk_high")
+            decision.trace.append(f"veto:spoof_risk={spoof_risk:.1f}")
+        elif spoof_risk >= 55:
+            decision.score_delta -= 5.0
+            decision.warnings.append("liquidity_spoof_risk_warn")
+            decision.trace.append(f"penalty:spoof_risk={spoof_risk:.1f}")
+
+        if crowding_score >= 78:
+            decision.score_delta -= 3.5
+            decision.warnings.append("crowding_extreme")
+            decision.trace.append(f"penalty:crowding={crowding_score:.1f}")
+
+        if squeeze_score >= 82:
+            decision.warnings.append("squeeze_risk_high")
+            decision.trace.append(f"warn:squeeze={squeeze_score:.1f}")
+
+        if sweep_detected and reclaim_strength >= 0.45 and fail_break_prob >= 0.55:
+            decision.score_delta += 3.0
+            decision.boosts.append("sweep_reclaim_reversal")
+            decision.trace.append("boost:sweep_reclaim")
+
+        if true_break_prob >= 0.68 and fail_break_prob <= 0.40 and wall_quality >= 45:
+            decision.score_delta += 3.0
+            decision.boosts.append("true_break_validation")
+            decision.trace.append("boost:true_break")
+
+        p_sweep = float(probs.get("p_sweep", 0.0) or 0.0)
+        p_trend = float(probs.get("p_trend", 0.0) or 0.0)
+        acceptance = float(brk.get("acceptance_score", 0.0) or 0.0)
+
+        if p_sweep >= 0.66 and reclaim_strength >= 0.45:
+            decision.score_delta += 2.0
+            decision.boosts.append("prob_sweep_reversal")
+            decision.trace.append(f"boost:p_sweep={p_sweep:.2f}")
+
+        if p_trend >= 0.66 and acceptance >= 0.55:
+            decision.score_delta += 2.0
+            decision.boosts.append("prob_true_break")
+            decision.trace.append(f"boost:p_trend={p_trend:.2f}")
 
         decision.final_score = max(0.0, min(100.0, decision.base_score + decision.score_delta))
         if not decision.vetoes and decision.final_score < cfg.FUSION_MIN_FINAL_SCORE:
