@@ -316,3 +316,4 @@ class AdversarialShieldWorm(AdversarialShield):
             self._register_detection_event()
             return True
         return False
+__all__ = ["AdversarialShield", "ShieldConfig", "ccxt_pro"]
