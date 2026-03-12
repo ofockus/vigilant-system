@@ -72,6 +72,10 @@ Run `infra/scripts/install_and_run_popos.sh` to install system deps, create `.ve
 
 The current skeleton is meant to be a clean consolidation point, not a claim that every imported module already inter-operates perfectly.
 
+## Agent skill-stack guidance
+
+For a security-first list of recommended agent skill categories, rollout order, and operational safeguards, see `docs/source/AGENT_SKILL_STACK_GUIDE.md`.
+
 ## Skills added
 
 - `skills/openclaw/SKILL.md`: translates fusion output into deterministic OpenClaw actions (`execute`, `watch`, `block`).
