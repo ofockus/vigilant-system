@@ -152,13 +152,7 @@ class Predator:
                 spread_ema_alpha=self.cfg.strategy.spread_ema_alpha,
             )
 
-        # Set leverage for all symbols
-        if self.cfg.mode == "live":
-            for sym in active:
-                try:
-                    await self.binance.set_leverage(sym, self.cfg.risk.leverage_max)
-                except Exception as e:
-                    logger.warning("Failed to set leverage for {}: {}", sym, e)
+        # Spot mode: no leverage to set
 
         # Register trade callback
         self.binance.on_trade(self._on_trade)

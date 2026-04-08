@@ -70,23 +70,15 @@ class RiskManager:
         self.open_positions: int = 0
 
     def compute_leverage(self, micro_vol: float) -> int:
-        """Dynamic leverage based on current volatility."""
-        if not self.leverage_dynamic:
-            return self.leverage_min
-
-        # High vol → lower leverage, low vol → higher leverage
-        if micro_vol <= 0:
-            return self.leverage_max
-
-        # Inverse relationship: vol 0.001 → 15x, vol 0.01 → 5x
-        target = int(0.015 / (micro_vol + 0.001))
-        return max(self.leverage_min, min(self.leverage_max, target))
+        """Spot mode: always 1x (no leverage)."""
+        return 1
 
     def compute_position_size(self, price: float, atr_pct: float,
-                               leverage: int) -> float:
-        """Position size in base currency.
+                               leverage: int = 1) -> float:
+        """Position size in base currency for spot trading.
 
-        Risk = max_risk_pct of equity. Size = risk_amount / (SL_distance * leverage).
+        Risk = max_risk_pct of equity. Size = risk_amount / SL_distance.
+        Spot: no leverage, so notional capped at 90% of equity.
         """
         risk_amount = self.state.current_equity * self.max_risk_pct / 100
         sl_pct = max(atr_pct * 1.5, 0.09)  # at least 0.09%
@@ -95,10 +87,10 @@ class RiskManager:
         if sl_distance <= 0:
             return 0.0
 
-        # Notional size
-        notional = risk_amount / (sl_pct / 100) * leverage
-        # Cap at 90% of equity * leverage
-        max_notional = self.state.current_equity * leverage * 0.9
+        # Notional size (spot = 1x, no leverage multiplier)
+        notional = risk_amount / (sl_pct / 100)
+        # Cap at 90% of equity (spot: can't exceed what you have)
+        max_notional = self.state.current_equity * 0.9
         notional = min(notional, max_notional)
 
         qty = notional / price

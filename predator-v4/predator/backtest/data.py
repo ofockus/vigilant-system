@@ -1,7 +1,7 @@
 """
 Historical data downloader for backtesting.
 
-Downloads aggTrades and klines from Binance futures public API.
+Downloads aggTrades and klines from Binance Spot public API.
 Stores as compressed Parquet files for fast replay.
 """
 
@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-BASE_URL = "https://fapi.binance.com"
+BASE_URL = "https://api.binance.com"
 
 
 async def download_agg_trades(
@@ -57,7 +57,7 @@ async def download_agg_trades(
                 "limit": batch_limit,
             }
             try:
-                async with session.get(f"{BASE_URL}/fapi/v1/aggTrades",
+                async with session.get(f"{BASE_URL}/api/v3/aggTrades",
                                        params=params) as resp:
                     if resp.status != 200:
                         logger.warning("HTTP {} fetching trades", resp.status)
@@ -133,7 +133,7 @@ async def download_klines(
                 "limit": 1500,
             }
             try:
-                async with session.get(f"{BASE_URL}/fapi/v1/klines",
+                async with session.get(f"{BASE_URL}/api/v3/klines",
                                        params=params) as resp:
                     data = await resp.json()
                     if not data:

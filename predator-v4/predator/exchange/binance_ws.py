@@ -1,5 +1,5 @@
 """
-Native Binance Futures WebSocket client.
+Native Binance Spot WebSocket client.
 
 Direct websocket connection — no ccxt overhead. Handles:
 - Combined stream for multiple symbols (depth@100ms, aggTrade, kline_1s)
@@ -22,10 +22,10 @@ import aiohttp
 import orjson
 from loguru import logger
 
-FUTURES_WS = "wss://fstream.binance.com"
-FUTURES_WS_TESTNET = "wss://stream.binancefuture.com"
-FUTURES_REST = "https://fapi.binance.com"
-FUTURES_REST_TESTNET = "https://testnet.binancefuture.com"
+SPOT_WS = "wss://stream.binance.com:9443"
+SPOT_WS_TESTNET = "wss://testnet.binance.vision"
+SPOT_REST = "https://api.binance.com"
+SPOT_REST_TESTNET = "https://testnet.binance.vision"
 
 
 @dataclass
@@ -78,7 +78,7 @@ class AggTrade:
 
 
 class BinanceWS:
-    """Native Binance Futures WebSocket with auto-reconnect."""
+    """Native Binance Spot WebSocket with auto-reconnect."""
 
     def __init__(
         self,
@@ -92,8 +92,8 @@ class BinanceWS:
         self.testnet = testnet
         self.symbols = [s.lower() for s in (symbols or ["btcusdt"])]
 
-        self._ws_base = FUTURES_WS_TESTNET if testnet else FUTURES_WS
-        self._rest_base = FUTURES_REST_TESTNET if testnet else FUTURES_REST
+        self._ws_base = SPOT_WS_TESTNET if testnet else SPOT_WS
+        self._rest_base = SPOT_REST_TESTNET if testnet else SPOT_REST
 
         # Data stores
         self.books: dict[str, LocalBook] = defaultdict(LocalBook)
@@ -159,13 +159,18 @@ class BinanceWS:
             return await resp.json()
 
     async def _get_listen_key(self) -> str:
-        data = await self._rest_post("/fapi/v1/listenKey")
+        data = await self._rest_post("/api/v3/userDataStream")
         return data.get("listenKey", "")
 
     async def _keepalive_listen_key(self) -> None:
         while self._running:
             try:
-                await self._rest_post("/fapi/v1/listenKey")
+                session = await self._get_session()
+                headers = {"X-MBX-APIKEY": self.api_key}
+                url = f"{self._rest_base}/api/v3/userDataStream"
+                async with session.put(url, params={"listenKey": self._listen_key},
+                                       headers=headers) as resp:
+                    await resp.json()
             except Exception as e:
                 logger.warning("Listen key keepalive failed: {}", e)
             await asyncio.sleep(1800)  # every 30 min
@@ -174,45 +179,43 @@ class BinanceWS:
 
     async def fetch_book_snapshot(self, symbol: str, limit: int = 50) -> dict:
         return await self._rest_get(
-            "/fapi/v1/depth",
+            "/api/v3/depth",
             {"symbol": symbol.upper(), "limit": limit},
         )
 
     async def fetch_ticker_24h(self, symbol: str) -> dict:
         return await self._rest_get(
-            "/fapi/v1/ticker/24hr",
+            "/api/v3/ticker/24hr",
             {"symbol": symbol.upper()},
         )
 
     async def fetch_all_tickers(self) -> list[dict]:
-        return await self._rest_get("/fapi/v1/ticker/24hr")
+        return await self._rest_get("/api/v3/ticker/24hr")
 
     async def fetch_klines(self, symbol: str, interval: str = "1m",
                            limit: int = 500) -> list[list]:
         return await self._rest_get(
-            "/fapi/v1/klines",
+            "/api/v3/klines",
             {"symbol": symbol.upper(), "interval": interval, "limit": limit},
         )
 
     async def fetch_agg_trades(self, symbol: str, limit: int = 1000) -> list[dict]:
         return await self._rest_get(
-            "/fapi/v1/aggTrades",
+            "/api/v3/aggTrades",
             {"symbol": symbol.upper(), "limit": limit},
         )
 
-    # --- Order execution (native, no ccxt) ---
+    # --- Order execution (native spot, no ccxt) ---
 
     async def place_market_order(self, symbol: str, side: str, quantity: float,
-                                  reduce_only: bool = False) -> dict:
+                                  **kwargs: Any) -> dict:
         params: dict[str, Any] = {
             "symbol": symbol.upper(),
             "side": side.upper(),
             "type": "MARKET",
             "quantity": f"{quantity:.8f}".rstrip("0").rstrip("."),
         }
-        if reduce_only:
-            params["reduceOnly"] = "true"
-        return await self._rest_post("/fapi/v1/order", params)
+        return await self._rest_post("/api/v3/order", params)
 
     async def place_limit_order(self, symbol: str, side: str, quantity: float,
                                  price: float, time_in_force: str = "GTC") -> dict:
@@ -224,26 +227,26 @@ class BinanceWS:
             "price": f"{price:.8f}".rstrip("0").rstrip("."),
             "timeInForce": time_in_force,
         }
-        return await self._rest_post("/fapi/v1/order", params)
+        return await self._rest_post("/api/v3/order", params)
 
     async def cancel_order(self, symbol: str, order_id: int) -> dict:
         return await self._rest_delete(
-            "/fapi/v1/order",
+            "/api/v3/order",
             {"symbol": symbol.upper(), "orderId": order_id},
         )
 
-    async def set_leverage(self, symbol: str, leverage: int) -> dict:
-        return await self._rest_post(
-            "/fapi/v1/leverage",
-            {"symbol": symbol.upper(), "leverage": leverage},
-        )
-
     async def fetch_account(self) -> dict:
-        return await self._rest_get("/fapi/v2/account", signed=True)
+        return await self._rest_get("/api/v3/account", signed=True)
 
-    async def fetch_positions(self) -> list[dict]:
-        data = await self._rest_get("/fapi/v2/positionRisk", signed=True)
-        return [p for p in data if float(p.get("positionAmt", 0)) != 0]
+    async def fetch_balances(self) -> dict[str, float]:
+        """Fetch spot balances. Returns {asset: free_amount}."""
+        data = await self.fetch_account()
+        balances = {}
+        for b in data.get("balances", []):
+            free = float(b.get("free", 0))
+            if free > 0:
+                balances[b["asset"]] = free
+        return balances
 
     # --- WebSocket streams ---
 
@@ -391,8 +394,9 @@ class BinanceWS:
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             data = orjson.loads(msg.data)
                             event = data.get("e", "")
-                            if event == "ORDER_TRADE_UPDATE":
-                                logger.info("Order update: {}", data.get("o", {}).get("S", ""))
+                            if event == "executionReport":
+                                logger.info("Order update: {} {} {}",
+                                            data.get("S", ""), data.get("s", ""), data.get("X", ""))
             except Exception as e:
                 logger.warning("User data stream error: {}", e)
                 await asyncio.sleep(5)

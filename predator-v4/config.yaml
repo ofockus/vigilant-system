@@ -7,6 +7,7 @@ mode: paper  # backtest | paper | live
 
 exchange:
   primary: binance          # binance or bybit
+  market_type: spot         # spot (not futures — keys are spot-only)
   binance_testnet: false    # true for testnet
   bybit_testnet: false
   recv_window: 5000
@@ -72,9 +73,9 @@ exit:
 risk:
   starting_capital: 200.0
   max_risk_per_trade_pct: 0.75  # 0.75% of account per trade
-  leverage_min: 5
-  leverage_max: 15
-  leverage_dynamic: true
+  leverage_min: 1               # spot = 1x always
+  leverage_max: 1               # spot = 1x always
+  leverage_dynamic: false       # no leverage on spot
   daily_loss_limit_pct: 4.0     # pause 24h after 4% daily loss
   max_drawdown_pct: 12.0        # shutdown at 12% drawdown
   max_concurrent_positions: 3

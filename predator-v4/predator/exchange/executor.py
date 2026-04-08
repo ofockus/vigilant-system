@@ -63,7 +63,7 @@ class Executor:
 
     async def market_exit(self, symbol: str, side: str, qty: float,
                           current_price: float) -> FillResult:
-        """Execute market exit (close position)."""
+        """Execute market exit (sell what we bought, or buy back what we sold)."""
         close_side = "SELL" if side == "BUY" else "BUY"
         t0 = time.time()
 
@@ -71,7 +71,7 @@ class Executor:
             return self._paper_fill(symbol, close_side, qty, current_price, t0)
 
         elif self.mode == "live":
-            return await self._live_fill(symbol, close_side, qty, t0, reduce_only=True)
+            return await self._live_fill(symbol, close_side, qty, t0)
 
         return FillResult(
             success=True, symbol=symbol, side=close_side, qty=qty,
@@ -100,11 +100,11 @@ class Executor:
         )
 
     async def _live_fill(self, symbol: str, side: str, qty: float,
-                         t0: float, reduce_only: bool = False) -> FillResult:
-        """Execute via native Binance REST."""
+                         t0: float) -> FillResult:
+        """Execute via native Binance Spot REST."""
         try:
             result = await self.binance.place_market_order(
-                symbol=symbol, side=side, quantity=qty, reduce_only=reduce_only
+                symbol=symbol, side=side, quantity=qty
             )
 
             if "orderId" not in result:
@@ -112,7 +112,13 @@ class Executor:
                 return FillResult(success=False, symbol=symbol, side=side,
                                   latency_ms=(time.time() - t0) * 1000)
 
-            avg_price = float(result.get("avgPrice", 0))
+            # Spot returns fills array; compute weighted avg price
+            fills = result.get("fills", [])
+            if fills:
+                total_qty = sum(float(f["qty"]) for f in fills)
+                avg_price = sum(float(f["price"]) * float(f["qty"]) for f in fills) / total_qty if total_qty else 0
+            else:
+                avg_price = float(result.get("price", 0))
             filled_qty = float(result.get("executedQty", 0))
 
             return FillResult(
