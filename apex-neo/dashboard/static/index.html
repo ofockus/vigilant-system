@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apex NEO</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --card: #12121a;
+    --border: #1e1e2e;
+    --text: #e0e0e0;
+    --dim: #666680;
+    --cyan: #00d4ff;
+    --purple: #8b5cf6;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #eab308;
+    --gradient: linear-gradient(135deg, #00d4ff, #8b5cf6);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .header {
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .header h1 {
+    font-size: 18px;
+    font-weight: 700;
+    background: var(--gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .header .status {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--dim);
+  }
+
+  .header .status .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 4px;
+    background: var(--green);
+  }
+
+  .header .status .dot.offline { background: var(--red); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+    padding: 16px 24px;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  .card h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--dim);
+    margin-bottom: 12px;
+  }
+
+  .card .value {
+    font-size: 28px;
+    font-weight: 700;
+  }
+
+  .card .sub {
+    font-size: 12px;
+    color: var(--dim);
+    margin-top: 4px;
+  }
+
+  .positive { color: var(--green); }
+  .negative { color: var(--red); }
+  .warning { color: var(--yellow); }
+  .cyan { color: var(--cyan); }
+  .purple { color: var(--purple); }
+
+  .regime-bar {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+
+  .regime-bar .fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease, background 0.5s ease;
+  }
+
+  .physics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .physics-item {
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .physics-item .label { color: var(--dim); }
+
+  #equity-canvas {
+    width: 100%;
+    height: 120px;
+    margin-top: 8px;
+  }
+
+  .trades-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+
+  .trades-table th {
+    text-align: left;
+    color: var(--dim);
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 400;
+  }
+
+  .trades-table td {
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .wide-card {
+    grid-column: 1 / -1;
+  }
+
+  .signal-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .signal-chip {
+    padding: 4px 10px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+  }
+
+  .signal-chip.active { border-color: var(--cyan); color: var(--cyan); }
+  .signal-chip.blocked { border-color: var(--red); color: var(--red); }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>APEX NEO</h1>
+  <div class="status">
+    <span><span class="dot" id="ws-dot"></span><span id="ws-status">Connecting...</span></span>
+    <span id="mode-badge">OBSERVE</span>
+    <span id="uptime">00:00:00</span>
+  </div>
+</div>
+
+<div class="grid">
+  <!-- Price Card -->
+  <div class="card">
+    <h2>Price</h2>
+    <div class="value cyan" id="price">--</div>
+    <div class="sub" id="spread">Spread: --</div>
+  </div>
+
+  <!-- Position Card -->
+  <div class="card">
+    <h2>Position</h2>
+    <div class="value" id="position">FLAT</div>
+    <div class="sub" id="pos-detail">--</div>
+  </div>
+
+  <!-- Session PnL -->
+  <div class="card">
+    <h2>Session PnL</h2>
+    <div class="value" id="pnl">$0.00</div>
+    <div class="sub" id="trade-count">0 trades</div>
+  </div>
+
+  <!-- Regime Gate -->
+  <div class="card">
+    <h2>Regime Gate</h2>
+    <div class="value" id="regime-score">100</div>
+    <div class="regime-bar"><div class="fill" id="regime-fill" style="width:100%;background:var(--green)"></div></div>
+    <div class="sub" id="regime-status">Active</div>
+  </div>
+
+  <!-- Physics Engine -->
+  <div class="card">
+    <h2>Physics Engine</h2>
+    <div class="physics-grid">
+      <div class="physics-item"><span class="label">Velocity</span><span id="phys-vel">0.00</span></div>
+      <div class="physics-item"><span class="label">Accel</span><span id="phys-acc">0.00</span></div>
+      <div class="physics-item"><span class="label">Gravity</span><span id="phys-grav">0.00</span></div>
+      <div class="physics-item"><span class="label">KE</span><span id="phys-ke">0.00</span></div>
+      <div class="physics-item"><span class="label">Direction</span><span id="phys-dir">0.00</span></div>
+      <div class="physics-item"><span class="label">Agree</span><span id="phys-agree">0/4</span></div>
+    </div>
+  </div>
+
+  <!-- Calibrator -->
+  <div class="card">
+    <h2>Calibrator</h2>
+    <div class="physics-grid">
+      <div class="physics-item"><span class="label">Win Rate</span><span id="cal-wr">50%</span></div>
+      <div class="physics-item"><span class="label">Kelly</span><span id="cal-kelly">2.0%</span></div>
+      <div class="physics-item"><span class="label">Quality</span><span id="cal-quality">0.50</span></div>
+      <div class="physics-item"><span class="label">Trades</span><span id="cal-trades">0</span></div>
+    </div>
+  </div>
+
+  <!-- Signals -->
+  <div class="card wide-card">
+    <h2>Signal Layers</h2>
+    <div class="signal-list" id="signals"></div>
+  </div>
+
+  <!-- Equity Curve -->
+  <div class="card wide-card">
+    <h2>Equity Curve</h2>
+    <canvas id="equity-canvas"></canvas>
+  </div>
+
+  <!-- Trades -->
+  <div class="card wide-card">
+    <h2>Recent Trades</h2>
+    <div style="overflow-x:auto;">
+      <table class="trades-table">
+        <thead><tr>
+          <th>Time</th><th>Side</th><th>Entry</th><th>Exit</th><th>PnL%</th><th>PnL$</th><th>Hold</th><th>Reason</th>
+        </tr></thead>
+        <tbody id="trades-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let ws;
+let startTime = Date.now();
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+  ws.onopen = () => {
+    $('ws-dot').className = 'dot';
+    $('ws-status').textContent = 'Connected';
+  };
+
+  ws.onclose = () => {
+    $('ws-dot').className = 'dot offline';
+    $('ws-status').textContent = 'Disconnected';
+    setTimeout(connect, 3000);
+  };
+
+  ws.onmessage = (e) => {
+    try { update(JSON.parse(e.data)); } catch {}
+  };
+}
+
+function fmt(n, d=2) {
+  return typeof n === 'number' ? n.toFixed(d) : '--';
+}
+
+function update(d) {
+  // Price
+  $('price').textContent = '$' + fmt(d.price, 2);
+
+  // Mode
+  $('mode-badge').textContent = (d.mode || 'observe').toUpperCase();
+
+  // Position
+  if (d.position) {
+    $('position').textContent = d.position.side.toUpperCase();
+    $('position').className = 'value ' + (d.position.side === 'long' ? 'positive' : 'negative');
+    $('pos-detail').textContent = `@ $${fmt(d.position.entry_price)} | ${fmt(d.position.hold_time_s,0)}s`;
+  } else {
+    $('position').textContent = 'FLAT';
+    $('position').className = 'value';
+    $('pos-detail').textContent = '--';
+  }
+
+  // PnL
+  const pnl = d.session_pnl || 0;
+  $('pnl').textContent = (pnl >= 0 ? '+' : '') + '$' + fmt(pnl, 4);
+  $('pnl').className = 'value ' + (pnl >= 0 ? 'positive' : 'negative');
+  $('trade-count').textContent = (d.trade_count || 0) + ' trades';
+
+  // Regime
+  const rs = d.regime || {};
+  const score = rs.score || 0;
+  $('regime-score').textContent = fmt(score, 0);
+  const fill = $('regime-fill');
+  fill.style.width = score + '%';
+  fill.style.background = score > 70 ? 'var(--green)' : score > 50 ? 'var(--yellow)' : 'var(--red)';
+  $('regime-status').textContent = rs.blocked ? 'BLOCKED: ' + (rs.block_reason || '') : 'Active';
+
+  // Physics
+  const ph = d.physics || {};
+  $('phys-vel').textContent = fmt(ph.velocity, 3);
+  $('phys-acc').textContent = fmt(ph.acceleration, 3);
+  $('phys-grav').textContent = fmt(ph.gravity, 3);
+  $('phys-ke').textContent = fmt(ph.kinetic_energy, 3);
+  $('phys-dir').textContent = fmt(ph.direction, 3);
+  $('phys-agree').textContent = (ph.indicators_agree || 0) + '/4';
+
+  // Calibrator
+  const cal = d.calibrator || {};
+  $('cal-wr').textContent = fmt((cal.ema_win_rate || 0.5) * 100, 1) + '%';
+  $('cal-kelly').textContent = fmt((cal.kelly_fraction || 0.02) * 100, 1) + '%';
+  $('cal-quality').textContent = fmt(cal.signal_quality || 0.5, 2);
+  $('cal-trades').textContent = cal.trade_count || 0;
+
+  // Signals
+  const sigs = d.signals || {};
+  const sl = $('signals');
+  sl.innerHTML = '';
+  const layers = [
+    ['L1 Predict', sigs.predictor_conf],
+    ['L2 Physics', sigs.physics_agree],
+    ['L3 VPIN', sigs.vpin],
+    ['L4 Shield', sigs.shield_safe],
+    ['L5 Funding', sigs.funding_div],
+    ['L6 Drift', sigs.drift],
+    ['L7 Calibr', sigs.calibrator],
+    ['L8 Flow', sigs.flow_imb],
+    ['L9 Whale', sigs.whale_count],
+  ];
+  for (const [name, val] of layers) {
+    const chip = document.createElement('span');
+    chip.className = 'signal-chip' + (val !== undefined ? ' active' : '');
+    chip.textContent = name + (val !== undefined ? ': ' + (typeof val === 'number' ? fmt(val, 3) : val) : '');
+    sl.appendChild(chip);
+  }
+
+  // Equity curve
+  drawEquity(d.equity_curve || []);
+
+  // Trades
+  const tbody = $('trades-body');
+  tbody.innerHTML = '';
+  const trades = d.trades || [];
+  for (const t of trades.slice(-20).reverse()) {
+    const tr = document.createElement('tr');
+    const pclass = (t.pnl_pct || 0) >= 0 ? 'positive' : 'negative';
+    tr.innerHTML = `
+      <td>${new Date((t.timestamp || 0) * 1000).toLocaleTimeString()}</td>
+      <td class="${t.side === 'long' ? 'positive' : 'negative'}">${(t.side || '').toUpperCase()}</td>
+      <td>${fmt(t.entry_price)}</td>
+      <td>${fmt(t.exit_price)}</td>
+      <td class="${pclass}">${fmt(t.pnl_pct, 4)}%</td>
+      <td class="${pclass}">$${fmt(t.pnl_usd, 4)}</td>
+      <td>${fmt(t.hold_time_s, 1)}s</td>
+      <td>${t.reason || ''}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function drawEquity(points) {
+  const canvas = $('equity-canvas');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const w = rect.width;
+  const h = rect.height;
+
+  ctx.clearRect(0, 0, w, h);
+
+  if (points.length < 2) {
+    ctx.fillStyle = '#666680';
+    ctx.font = '12px JetBrains Mono';
+    ctx.fillText('Waiting for data...', w/2 - 60, h/2);
+    return;
+  }
+
+  const vals = points.map(p => p.equity);
+  const mn = Math.min(...vals);
+  const mx = Math.max(...vals);
+  const range = mx - mn || 1;
+  const pad = 4;
+
+  // Gradient fill
+  const grad = ctx.createLinearGradient(0, 0, w, 0);
+  grad.addColorStop(0, 'rgba(0,212,255,0.3)');
+  grad.addColorStop(1, 'rgba(139,92,246,0.3)');
+
+  ctx.beginPath();
+  ctx.moveTo(pad, h - pad);
+  for (let i = 0; i < points.length; i++) {
+    const x = pad + (i / (points.length - 1)) * (w - 2*pad);
+    const y = h - pad - ((vals[i] - mn) / range) * (h - 2*pad);
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(w - pad, h - pad);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  for (let i = 0; i < points.length; i++) {
+    const x = pad + (i / (points.length - 1)) * (w - 2*pad);
+    const y = h - pad - ((vals[i] - mn) / range) * (h - 2*pad);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = '#00d4ff';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+// Uptime ticker
+setInterval(() => {
+  const s = Math.floor((Date.now() - startTime) / 1000);
+  const h = String(Math.floor(s/3600)).padStart(2,'0');
+  const m = String(Math.floor((s%3600)/60)).padStart(2,'0');
+  const sec = String(s%60).padStart(2,'0');
+  $('uptime').textContent = h + ':' + m + ':' + sec;
+}, 1000);
+
+connect();
+</script>
+</body>
+</html>

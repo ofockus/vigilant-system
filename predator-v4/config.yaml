@@ -1,0 +1,108 @@
+# ============================================================
+# PREDATOR v4 TOKYO — Master Configuration
+# Every parameter tunable. No code changes needed.
+# ============================================================
+
+mode: paper  # backtest | paper | live
+
+exchange:
+  primary: binance          # binance or bybit
+  binance_testnet: false    # true for testnet
+  bybit_testnet: false
+  recv_window: 5000
+  order_timeout_ms: 3000
+
+symbols:
+  pool:
+    - BTCUSDT
+    - ETHUSDT
+    - SOLUSDT
+    - XRPUSDT
+    - DOGEUSDT
+    - BNBUSDT
+    - AVAXUSDT
+    - ADAUSDT
+  max_active: 6
+  min_volume_24h: 50000000      # $50M minimum 24h volume
+  min_volatility_5m: 0.0003     # 0.03% min 5m volatility
+  refresh_interval_s: 300
+
+strategy:
+  # Entry confirmations (need 3/3)
+  min_confirmations: 3
+  total_confirmations: 3
+  min_model_confidence: 0.68
+  min_book_imbalance: 0.15
+  min_flow_delta: 0.10
+
+  # Feature thresholds
+  decel_threshold: 0.18
+  ek_rev_threshold: 0.25
+  momentum_window_ticks: 50
+  flow_window_ticks: 100
+  spread_ema_alpha: 0.05
+
+  # Multi-timeframe weights
+  tf_1s_weight: 0.45
+  tf_5s_weight: 0.35
+  tf_15s_weight: 0.20
+
+exit:
+  # Anti-churn
+  min_hold_s: 3.0
+  cooldown_s: 8.0
+  pred_flip_exit: true
+  grav_collapse_threshold: 0.60
+  drift_exit_threshold: 0.30
+
+  # Stops
+  stop_loss_pct: 0.09           # 0.09% — tight but above fees
+  take_profit_base_pct: 0.14    # 0.14% base TP
+  trail_activation_pct: 0.06    # activate trail after 0.06%
+  trail_callback_pct: 0.035     # trail callback 0.035%
+
+  # Time
+  max_hold_s: 180               # 3 minutes max
+  time_decay_start_s: 90        # start tightening after 90s
+
+  # Volatility scaling
+  vol_scale_sl: true
+  vol_scale_tp: true
+
+risk:
+  starting_capital: 200.0
+  max_risk_per_trade_pct: 0.75  # 0.75% of account per trade
+  leverage_min: 5
+  leverage_max: 15
+  leverage_dynamic: true
+  daily_loss_limit_pct: 4.0     # pause 24h after 4% daily loss
+  max_drawdown_pct: 12.0        # shutdown at 12% drawdown
+  max_concurrent_positions: 3
+  pause_after_consecutive_losses: 4
+  pause_duration_s: 600
+
+backtest:
+  data_dir: data/historical
+  lookback_days: 180
+  latency_ms: 3.0
+  slippage_pct: 0.005
+  maker_fee_pct: 0.02
+  taker_fee_pct: 0.04
+  initial_capital: 200.0
+
+telegram:
+  enabled: true
+  notify_entry: true
+  notify_exit: true
+  notify_daily: true
+  notify_errors: true
+
+dashboard:
+  host: 0.0.0.0
+  port: 8080
+
+log:
+  level: INFO
+  dir: logs
+  rotation: "50 MB"
+  retention: "7 days"

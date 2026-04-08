@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PREDATOR v4 TOKYO</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;700&display=swap');
+  :root { --bg:#080810; --card:#0f0f1a; --border:#1a1a2e; --text:#d4d4d8;
+           --dim:#52525b; --green:#22c55e; --red:#ef4444; --cyan:#06b6d4;
+           --amber:#f59e0b; --purple:#a855f7; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'JetBrains Mono',monospace; background:var(--bg); color:var(--text); }
+  .hdr { padding:12px 20px; border-bottom:1px solid var(--border); display:flex;
+         justify-content:space-between; align-items:center; }
+  .hdr h1 { font-size:16px; background:linear-gradient(90deg,var(--cyan),var(--purple));
+             -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .hdr .info { font-size:11px; color:var(--dim); display:flex; gap:14px; }
+  .dot { width:7px; height:7px; border-radius:50%; display:inline-block; margin-right:4px; }
+  .dot.on { background:var(--green); } .dot.off { background:var(--red); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+          gap:10px; padding:14px 20px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:6px; padding:14px; }
+  .card h3 { font-size:10px; text-transform:uppercase; letter-spacing:1.2px; color:var(--dim); margin-bottom:8px; }
+  .val { font-size:24px; font-weight:700; }
+  .sub { font-size:11px; color:var(--dim); margin-top:3px; }
+  .g { color:var(--green); } .r { color:var(--red); } .c { color:var(--cyan); } .a { color:var(--amber); }
+  .wide { grid-column:1/-1; }
+  table { width:100%; border-collapse:collapse; font-size:10px; }
+  th { text-align:left; color:var(--dim); padding:3px 5px; border-bottom:1px solid var(--border); }
+  td { padding:3px 5px; border-bottom:1px solid var(--border); }
+  canvas { width:100%; height:100px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { padding:3px 8px; border-radius:10px; border:1px solid var(--border); font-size:10px; }
+  .chip.active { border-color:var(--cyan); color:var(--cyan); }
+</style>
+</head>
+<body>
+<div class="hdr">
+  <h1>PREDATOR v4 TOKYO</h1>
+  <div class="info">
+    <span><span class="dot" id="dot"></span><span id="conn">...</span></span>
+    <span id="mode">--</span>
+    <span id="uptime">00:00:00</span>
+  </div>
+</div>
+<div class="grid">
+  <div class="card"><h3>Equity</h3><div class="val c" id="eq">$200.00</div><div class="sub" id="dd">DD: 0.0%</div></div>
+  <div class="card"><h3>Daily PnL</h3><div class="val" id="dpnl">$0.00</div><div class="sub" id="tc">0 trades</div></div>
+  <div class="card"><h3>Win Rate</h3><div class="val" id="wr">0%</div><div class="sub" id="pf">PF: --</div></div>
+  <div class="card"><h3>Positions</h3><div class="val" id="pos">FLAT</div><div class="sub" id="posdet">--</div></div>
+  <div class="card wide"><h3>Active Symbols</h3><div class="chips" id="syms"></div></div>
+  <div class="card wide"><h3>Equity Curve</h3><canvas id="eqc"></canvas></div>
+  <div class="card wide"><h3>Recent Trades</h3>
+    <table><thead><tr><th>Time</th><th>Sym</th><th>Side</th><th>PnL%</th><th>PnL$</th><th>Hold</th><th>Exit</th></tr></thead>
+    <tbody id="tb"></tbody></table>
+  </div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+let ws,t0=Date.now();
+function connect(){
+  const p=location.protocol==='https:'?'wss:':'ws:';
+  ws=new WebSocket(`${p}//${location.host}/ws`);
+  ws.onopen=()=>{$('dot').className='dot on';$('conn').textContent='Live';};
+  ws.onclose=()=>{$('dot').className='dot off';$('conn').textContent='Offline';setTimeout(connect,3000);};
+  ws.onmessage=e=>{try{render(JSON.parse(e.data))}catch{}};
+}
+function f(n,d=2){return typeof n==='number'?n.toFixed(d):'--';}
+function render(d){
+  const r=d.risk||{};
+  $('eq').textContent='$'+f(r.equity,2);
+  $('dd').textContent='DD: '+f(r.drawdown_pct,1)+'%';
+  $('dpnl').textContent='$'+f(r.daily_pnl,4);
+  const pnl=r.daily_pnl||0;
+  $('dpnl').className='val '+(pnl>=0?'g':'r');
+  $('tc').textContent=(r.trades||0)+' trades';
+  $('wr').textContent=f(r.win_rate,1)+'%';
+  $('mode').textContent=(d.mode||'--').toUpperCase();
+  const pos=d.positions||[];
+  if(pos.length){$('pos').textContent=pos.length+' OPEN';$('posdet').textContent=pos.map(p=>p.symbol).join(', ');}
+  else{$('pos').textContent='FLAT';$('posdet').textContent='--';}
+  const sc=$('syms');sc.innerHTML='';
+  for(const s of (d.active_symbols||[])){const c=document.createElement('span');c.className='chip active';c.textContent=s;sc.appendChild(c);}
+  drawEq(d.equity_curve||[]);
+  const tb=$('tb');tb.innerHTML='';
+  for(const t of (d.trades||[]).slice(-15).reverse()){
+    const tr=document.createElement('tr');const cl=t.pnl_pct>=0?'g':'r';
+    tr.innerHTML=`<td>${new Date(t.exit_time*1000).toLocaleTimeString()}</td><td>${t.symbol||''}</td>
+    <td class="${t.side===1?'g':'r'}">${t.side===1?'LONG':'SHORT'}</td>
+    <td class="${cl}">${f(t.pnl_pct,3)}%</td><td class="${cl}">$${f(t.pnl_usd,4)}</td>
+    <td>${f(t.hold_time_s,1)}s</td><td>${t.exit_reason||''}</td>`;
+    tb.appendChild(tr);
+  }
+}
+function drawEq(pts){
+  const c=$('eqc'),ctx=c.getContext('2d'),dpr=devicePixelRatio||1;
+  const rect=c.getBoundingClientRect();c.width=rect.width*dpr;c.height=rect.height*dpr;
+  ctx.scale(dpr,dpr);const w=rect.width,h=rect.height;ctx.clearRect(0,0,w,h);
+  if(pts.length<2){ctx.fillStyle='#52525b';ctx.font='11px JetBrains Mono';ctx.fillText('Waiting...',w/2-30,h/2);return;}
+  const vals=pts.map(p=>p[1]),mn=Math.min(...vals),mx=Math.max(...vals),rng=mx-mn||1;
+  ctx.beginPath();
+  for(let i=0;i<pts.length;i++){const x=i/(pts.length-1)*w,y=h-4-((vals[i]-mn)/rng)*(h-8);
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);}
+  ctx.strokeStyle='#06b6d4';ctx.lineWidth=1.5;ctx.stroke();
+}
+setInterval(()=>{const s=Math.floor((Date.now()-t0)/1000);
+  $('uptime').textContent=[Math.floor(s/3600),Math.floor(s%3600/60),s%60].map(v=>String(v).padStart(2,'0')).join(':');},1000);
+connect();
+</script>
+</body>
+</html>
